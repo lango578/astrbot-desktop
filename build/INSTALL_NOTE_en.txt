@@ -1,0 +1,31 @@
+﻿AstrBot for Windows - read before installing
+
+This installer ships a build of AstrBot (an open-source multi-platform LLM bot
+framework): a native launcher, a console-free core, the embedded admin panel,
+the QQ setup form and scan-to-login.
+
+Upstream project: https://github.com/AstrBotDevs/AstrBot   Site: https://astrbot.app
+The AstrBot code in this package stays under its original AGPL-3.0 licence;
+the full text is installed as LICENSE-AstrBot.txt.
+
+What installing does
+  * Installs for the current user by default (%LOCALAPPDATA%\Programs\AstrBot), no
+    administrator rights needed. Choose "for all users" in the next step if you
+    want a machine-wide install - that asks for elevation once.
+  * Never touches an existing data\ folder: bot configuration, plugins and the
+    message database live there. Upgrading replaces program files only.
+  * Creates Start menu entries, an optional desktop shortcut, and an entry in
+    "Installed apps" for uninstalling.
+
+After the first launch
+  1. The window shows the panel's initial password (user: astrbot). Change it.
+  2. For a QQ official bot press "Scan to login" - no AppID/secret copying.
+  3. Usage, troubleshooting and the redacted diagnostics export are in README.txt.
+
+About the Windows "unknown publisher" warning
+  Both executables and this installer carry a self-signed Authenticode signature
+  from this build (verify with astrbot-signing.cer in the folder). A self-signed
+  certificate is not vouched for by an authority, so SmartScreen may still warn
+  once. That is not a sign of tampering; removing the warning needs a purchased
+  code-signing certificate.
+

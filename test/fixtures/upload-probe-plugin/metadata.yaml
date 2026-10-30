@@ -1,0 +1,4 @@
+name: upload_probe
+desc: 面板上传插件路径的验收探针，不产生任何行为
+author: AstrBot 桌面版构建
+version: 1.0.0

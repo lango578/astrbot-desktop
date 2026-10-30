@@ -1,0 +1,50 @@
+# 构建产物与依赖：体积大、可重建，一律不进公开仓库
+venv/
+py312/
+src/
+dashboard-dist/
+dist/
+dist-new/
+installer/
+exp/
+tools/
+.ruff_cache/
+__pycache__/
+*.pyc
+build/AstrBot/
+build/launcher/*.exe
+build/vendor/
+build/assets/ffmpeg.exe
+
+# 使用者的数据：里面有面板口令哈希、QQ appid/secret、聊天数据库
+# 这台机器上有两份，一份都不能进仓库
+data/
+**/data/
+!**/test/**/data/
+*.db
+*.db-shm
+*.db-wal
+
+# 签名：私钥只在 Windows 证书库里，公钥和指纹可以公开
+keys/*.pfx
+keys/*.pvk
+*.key
+
+# 日志与临时产物
+*.log
+depsout.txt
+depsview.txt
+*.tar.gz
+*.zip
+
+# 第三方二进制（别人的版权物，不重新分发）
+*.apk
+*.sha1
+
+# GitHub 访问令牌：只从本地文件读，绝不入库、不进包
+keys/gh.token
+keys/*.token
+*.token
+
+# 个人信息审计的本地探针：不许入库
+keys/personal-probes.txt
