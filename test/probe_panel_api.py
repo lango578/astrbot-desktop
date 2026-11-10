@@ -20,7 +20,7 @@ BUILD = Path(__file__).resolve().parents[1]
 APP = Path(os.environ.get("ASTRBOT_APP_DIR") or (BUILD / "dist" / "AstrBot"))
 CORE = APP / "core" / "AstrBotCore.exe"
 ROOT = BUILD / "test" / "artifacts" / "probe-root"
-PORT = 6185
+PORT = int(os.environ.get("ASTRBOT_TEST_PANEL_PORT") or 6185)
 
 ENDPOINTS = (
     "/api/v1/plugins",

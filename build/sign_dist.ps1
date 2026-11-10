@@ -12,7 +12,7 @@ param(
     [string]$TimestampServer = "http://timestamp.digicert.com",
     [switch]$NoTimestamp,
     # 安装程序是我们自己 ISCC 编出来的二进制，用户真正双击的就是它，所以也在签名范围内：
-    #   -ExtraFile installer\AstrBot-Setup-4.29.3.exe
+    #   -ExtraFile installer\AstrBot-Setup-4.29.4.exe
     [string[]]$ExtraFile = @(),
     # 已经签过一遍成品、只想补签安装包时用这个（否则每次都会重新向 TSA 签一遍那两个 exe，
     # 字节会变，刚编好的安装包里带的就是上一份签名）

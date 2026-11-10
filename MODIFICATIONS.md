@@ -1,17 +1,33 @@
 # 对上游的改动清单（AGPL 合规说明）
 
-构建对象：**AstrBot 4.29.3**（https://github.com/AstrBotDevs/AstrBot ，AGPL-3.0）。
+构建对象：**AstrBot 4.29.4**（https://github.com/AstrBotDevs/AstrBot ，AGPL-3.0）。
 本仓库**不内联**上游源码；上游源码按版本号自行获取，保证可复现：
 
 ```powershell
-# 上游 4.29.3 的获取方式（任选其一）
-git clone --branch v4.29.3 https://github.com/AstrBotDevs/AstrBot.git src/AstrBot-master
+# 上游 4.29.4 的获取方式（任选其一）
+git clone --branch v4.29.4 https://github.com/AstrBotDevs/AstrBot.git src/AstrBot-master
 # 或（本机 git 到 github.com:443 不通时）走归档直链
-curl -L -o astrbot.zip https://codeload.github.com/AstrBotDevs/AstrBot/zip/refs/tags/v4.29.3
+curl -L -o astrbot.zip https://codeload.github.com/AstrBotDevs/AstrBot/zip/refs/tags/v4.29.4
 ```
 
 WebUI 静态包取自 AstrBot 官方发布的 dashboard 产物，放在
 `src/AstrBot-master/astrbot/dashboard/dist`（`assets/version` 必须与核心版本一致，否则启动会联网自取）。
+构建实际读取的是 `dashboard-dist/dist`（两处内容逐字节一致），取自
+`AstrBot-v4.29.4-dashboard.zip`（Release 资产，源码归档里**没有**这份构建产物），
+SHA-256 `12f394569e5b7971a53218e261917032f8c499a504584de3af8dacfd7557af74`（与 GitHub API 的 `digest` 字段核对过）。
+
+### 版本钉位（2026-11-09 修正）
+
+`v4.29.3-desktop.6` 及更早的构建，本机的 `src/AstrBot-master` 取的是上游 **master 分支快照**（2026-10-28），
+不是 `v4.29.3` 标签：核心自称 4.29.3、配的也是 4.29.3 官方 WebUI，但树里已经含有尚未发布的改动
+（`core/provider/decision.py`、`core/provider/sources/system_one_decision_source.py`、
+`core/platform/sources/lark/lark_group_info.py` 等，`v4.29.3` 标签里没有，`v4.29.4` 里才有）。
+按上面命令拉 `v4.29.3` 标签的人，得到的树和那份成品并不一致——这一段是那份说明的勘误。
+
+从本版（`v4.29.4-desktop.1`）起改为**按标签获取**：核心版本字符串、WebUI 的 `assets/version`
+与上游标签三者对齐，上面的命令可复现。依赖面没有变化——`requirements.txt` 与 `pyproject.toml`
+的依赖段在 `v4.29.3` 与 `v4.29.4` 之间逐字节相同（`pyproject.toml` 只有 `version` 一行不同），
+所以构建用的 venv 不需要动。
 
 ## 一、没有修改上游任何源文件
 
@@ -65,6 +81,12 @@ WebUI 静态包取自 AstrBot 官方发布的 dashboard 产物，放在
 实现按接口查找目标类（同时存在 `_add_wsr_api_client` 与 `_remove_wsr_api_client` 的类），
 不硬编类名；任何异常都只打印 warning，绝不阻断启动。
 可用 `ASTRBOT_DISABLE_SESSION_PATCH=1` 关闭，`--self-check` 的 `[OneBot 会话恢复]` 一节会报补丁来源。
+
+入口还会把 `NO_PROXY` / `no_proxy` 里的方括号去掉（`sanitize_proxy_env()`）。原因不是上游的错，
+是代理软件常把 IPv6 例外写成 `[::1]`，而 httpx 0.28 会把 NO_PROXY 的每一条当 URL 解析，
+在**构造客户端**时就抛 `InvalidURL: Invalid port: ':1]'` —— 扫码登录和一切走 httpx 的模型调用
+都会撞上这句没人看得懂的话。`[::1]` 与 `::1` 在 NO_PROXY 里同义，去掉方括号不改变任何 bypass 语义。
+`--self-check` 有一条盯着它（把 `sanitize_proxy_env` 换成空函数，那条立刻变红）。
 
 ## 三、默认值改动（桌面产品姿态，不改上游代码）
 

@@ -14,7 +14,8 @@ from pathlib import Path
 BUILD = Path(__file__).resolve().parent
 ROOT = BUILD.parent
 TARGET = ROOT / "launcher" / "AstrBotStamp.cs"
-# 只算真正参与编译的输入，且不含本文件生成的那个 stamp（否则每次哈希都会变）
+# 只算真正编译进 exe 的输入。README.txt 曾经在这里：结果是改一个文档数字就得重打一次包、
+# 重跑一次 20 分钟的验收（今天真为此多跑了两轮）。文档不是构建输入，它的完整性有 MANIFEST 管。
 SOURCES = (
     ROOT / "launcher" / "AstrBotLauncher.cs",
     ROOT / "launcher" / "AstrBotControls.cs",
@@ -24,8 +25,8 @@ SOURCES = (
     ROOT / "launcher" / "AstrBotBind.cs",
     ROOT / "launcher" / "AstrBotOneBot.cs",
     ROOT / "launcher" / "AstrBotOneBotInstall.cs",
+    ROOT / "launcher" / "AstrBotRepair.cs",
     BUILD / "astrbot_desktop.py",
-    BUILD / "README.txt",
 )
 BLOCK = re.compile(r"(public const string Stamp = \")[^\"]*(\";)")
 

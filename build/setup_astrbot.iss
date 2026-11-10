@@ -1,6 +1,7 @@
 ﻿; AstrBot 桌面版 Windows 安装程序（Inno Setup 6）
 ;
-;   tools\innosetup\ISCC.exe /DSourceDir="<构建工程目录>\dist-new\AstrBot" build\setup_astrbot.iss
+;   tools\innosetup\ISCC.exe /DSourceDir="<构建工程目录>\dist-<版本>\AstrBot" build\setup_astrbot.iss
+;   （/D 后面的名字必须正好是 SourceDir；不给或给错名字都编不过，见下面的 #error）
 ;
 ; 装完产物在 installer\AstrBot-Setup-<版本>.exe。
 ;
@@ -16,10 +17,17 @@
 ;      语言换进内置说明页（页面标题本身由语言文件给）。
 
 #define AppName "AstrBot 桌面版"
-#define AppVersion "4.29.3"
+#define AppVersion "4.29.4"
 #define AppURL "https://astrbot.app"
 #ifndef SourceDir
-  #define SourceDir "..\dist-new\AstrBot"
+  ; 这里原来给的是 "..\dist-new\AstrBot" 一个默认值。2026-11-09 命令行把 /DSourceDir 打成了
+  ; /DDSourceDir：Inno 不认这个 define，于是安静地用了默认目录，打出一个名字叫 4.29.4、
+  ; 内容还是 4.29.3 的安装包 —— 而且默认目录是"合法存在"的，任何存在性检查都拦不住。
+  ; 现在不给 SourceDir 就编不过：宁可停下来，也别安静地打包另一棵树。
+  #error 必须显式传 /DSourceDir="<构建工程目录>\dist-<版本>\AstrBot"，不给就编不过（防止默默用别的树）
+#endif
+#if !FileExists(SourceDir + "\core\AstrBotCore.exe")
+  #error SourceDir 指向的目录里没有 core\AstrBotCore.exe：路径给错了，或者那根本不是一次构建产物
 #endif
 
 [Setup]

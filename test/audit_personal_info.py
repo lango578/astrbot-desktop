@@ -35,8 +35,8 @@ from pathlib import Path
 
 BUILD = Path(__file__).resolve().parents[1]
 STAGE = BUILD / "publish-repo"
-ZIP = BUILD / "installer" / "AstrBot-4.29.3-desktop-portable.zip"
-SETUP = BUILD / "installer" / "AstrBot-Setup-4.29.3.exe"
+ZIP = BUILD / "installer" / "AstrBot-4.29.4-desktop-portable.zip"
+SETUP = BUILD / "installer" / "AstrBot-Setup-4.29.4.exe"
 PROBES = BUILD / "keys" / "personal-probes.txt"
 REPO = os.environ.get("AUDIT_REPO", "") or ""
 BRANCH = os.environ.get("AUDIT_BRANCH", "main")

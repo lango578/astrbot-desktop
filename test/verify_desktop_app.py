@@ -22,12 +22,14 @@ APP = Path(os.environ.get("ASTRBOT_APP_DIR") or (BUILD / "dist" / "AstrBot"))
 LAUNCHER = APP / "AstrBot.exe"
 CORE = APP / "core" / "AstrBotCore.exe"
 DATA = APP / "data"
-PORT = 6185
-ONEBOT_PORT = 6199
+PORT = int(os.environ.get("ASTRBOT_TEST_PANEL_PORT") or 6185)
+ONEBOT_PORT = int(os.environ.get("ASTRBOT_TEST_ONEBOT_PORT") or 6199)
+# 实例登记表（%LOCALAPPDATA%\AstrBot\running.json）是每用户机器级的，一次性通道要用自己的沙箱。
+SANDBOX = BUILD / "test" / "artifacts" / "desktop-sandbox-localappdata"
 
 
-def run(cmd: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+def run(cmd: list[str], timeout: int = 120, env: dict | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
 
 
 def powershell(script: str) -> str:
@@ -68,8 +70,9 @@ def main() -> int:
             return 2
     # 先落一份设置，避免测试时弹出浏览器窗口。
     DATA.mkdir(parents=True)
+    SANDBOX.mkdir(parents=True, exist_ok=True)
     (DATA / "desktop.conf").write_text(
-        "port=6185\nallow_lan=false\nopen_panel=false\nminimize_to_tray=true\n",
+        f"port={PORT}\nallow_lan=false\nopen_panel=false\nminimize_to_tray=true\n",
         encoding="utf-8",
     )
 
@@ -82,12 +85,19 @@ def main() -> int:
         "name=QQ 个人号\n"
         "enable=true\n"
         "ws_reverse_host=127.0.0.1\n"
-        "ws_reverse_port=6199\n"
+        f"ws_reverse_port={ONEBOT_PORT}\n"
         "ws_reverse_token=\n"
         "[/platform]\n",
         encoding="utf-8",
     )
-    env_core = run([str(CORE), "--platform-file", str(ini)], timeout=180)
+    bridge_env = {
+        **os.environ,
+        "ASTRBOT_DASHBOARD_HOST": "127.0.0.1",
+        "ASTRBOT_DASHBOARD_PORT": str(PORT),
+        # 实例登记表是每用户机器级的，不隔离就会拦本机另一份真在跑的 AstrBot。
+        "LOCALAPPDATA": str(SANDBOX),
+    }
+    env_core = run([str(CORE), "--platform-file", str(ini)], timeout=180, env=bridge_env)
     wrote = "PLATFORM_WRITTEN" in (env_core.stdout or "")
     results.append(("launcher bridge wrote the QQ platform entry", wrote, f"rc={env_core.returncode} out={(env_core.stdout or '').strip()[:80]}"))
 
@@ -100,7 +110,7 @@ def main() -> int:
             raise SystemExit(_report(results))
 
         listening = powershell(
-            "Get-NetTCPConnection -State Listen -LocalPort 6199 -ErrorAction SilentlyContinue | "
+            f"Get-NetTCPConnection -State Listen -LocalPort {ONEBOT_PORT} -ErrorAction SilentlyContinue | "
             "Select-Object -First 1 -ExpandProperty LocalAddress"
         )
         results.append(("QQ reverse-WS is listening after first run", listening == "127.0.0.1", f"addr={listening or 'none'}"))

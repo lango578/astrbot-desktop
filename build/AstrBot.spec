@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec: AstrBot 4.29.3 Windows desktop build.
+"""PyInstaller spec: AstrBot 4.29.4 Windows desktop build.
 
 Layout produced (onedir) — 这条命令是唯一的正确姿势，--distpath 不能省：
 

@@ -4,7 +4,7 @@ Publishing is only done when this is green. It deliberately reads the **anonymou
 endpoints, because "my script said OK" is not evidence that a stranger can see the
 release, that the tree matches the staging directory, or that no secret rode along.
 
-    venv\\Scripts\\python.exe test\\verify_published_repo.py --repo <你的账号>/astrbot-desktop --tag v4.29.3-desktop.1
+    venv\\Scripts\\python.exe test\\verify_published_repo.py --repo <你的账号>/astrbot-desktop --tag v4.29.4-desktop.1
 
 Loopback has nothing to do with this one: it is a read-only check of a public page.
 """
@@ -169,7 +169,7 @@ def main() -> int:
         results.append(("NOTRUN Release 与资产（匿名额度被打满，用 --token-file 补测）", True, f"status={status}"))
     assets = {str(a.get("name")): a for a in (release.get("assets") or [])}
     results.append((f"Release {args.tag} 存在", status == 200 and bool(assets), f"status={status}"))
-    planned = ["AstrBot-Setup-4.29.3.exe", "AstrBot-4.29.3-desktop-portable.zip", "SHA256SUMS.txt"]
+    planned = ["AstrBot-Setup-4.29.4.exe", "AstrBot-4.29.4-desktop-portable.zip", "SHA256SUMS.txt"]
     missing = [name for name in planned if name not in assets]
     results.append(("三个资产都在", not missing, ", ".join(missing) or "3/3"))
     for name in planned:

@@ -19,7 +19,7 @@ BUILD = Path(__file__).resolve().parent
 ROOT = BUILD.parent
 APP = Path(shutil.os.environ.get("ASTRBOT_APP_DIR") or (ROOT / "dist-new" / "AstrBot"))
 OUT = ROOT / "installer"
-VERSION = "4.29.3"
+VERSION = "4.29.4"
 
 
 def portable_zip() -> Path:

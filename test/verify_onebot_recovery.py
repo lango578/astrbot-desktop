@@ -38,6 +38,8 @@ BUILD = Path(__file__).resolve().parents[1]
 APP = Path(os.environ.get("ASTRBOT_APP_DIR") or (BUILD / "dist-new" / "AstrBot"))
 CORE = APP / "core" / "AstrBotCore.exe"
 ROOT = BUILD / "test" / "artifacts" / "onebot-recovery-root"
+# 实例登记表是「每用户、机器级」的，不隔离就会看见本机另一份真在跑的 AstrBot。
+SANDBOX = ROOT / "localappdata"
 LOG = BUILD / "test" / "artifacts" / "onebot-recovery.log"
 PANEL = 6197
 WS_PORT = 6198
@@ -90,7 +92,14 @@ def write_platform() -> None:
     proc = subprocess.run(
         [str(CORE), "--platform-file", str(ini)],
         cwd=str(APP),
-        env={**os.environ, "ASTRBOT_ROOT": str(ROOT), "PYTHONIOENCODING": "utf-8"},
+        env={
+            **os.environ,
+            "ASTRBOT_ROOT": str(ROOT),
+            "LOCALAPPDATA": str(SANDBOX),
+            "ASTRBOT_DASHBOARD_HOST": "127.0.0.1",
+            "ASTRBOT_DASHBOARD_PORT": str(PANEL),
+            "PYTHONIOENCODING": "utf-8",
+        },
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -185,6 +194,7 @@ def main() -> int:
 
     shutil.rmtree(ROOT, ignore_errors=True)
     (ROOT / "data").mkdir(parents=True)
+    SANDBOX.mkdir(parents=True, exist_ok=True)
     if args.plugin:
         src = Path(args.plugin).resolve()
         if not (src / "main.py").is_file():
@@ -196,6 +206,7 @@ def main() -> int:
     env = {
         **os.environ,
         "ASTRBOT_ROOT": str(ROOT),
+        "LOCALAPPDATA": str(SANDBOX),
         "ASTRBOT_DASHBOARD_HOST": "127.0.0.1",
         "ASTRBOT_DASHBOARD_PORT": str(PANEL),
         "PYTHONIOENCODING": "utf-8",

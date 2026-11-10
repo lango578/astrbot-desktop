@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -61,6 +62,34 @@ def write_steps(steps: list[dict], report: Path) -> None:
     report.write_text("\n\n".join(f"### {s['name']}\n{s['text']}" for s in steps), encoding="utf-8")
 
 
+def port_preflight() -> None:
+    """开跑前先看端口被谁占着：被别的 AstrBot 占走时那几步必然红，红的是环境不是包。"""
+    panel = int(os.environ.get("ASTRBOT_TEST_PANEL_PORT") or 6185)
+    onebot = int(os.environ.get("ASTRBOT_TEST_ONEBOT_PORT") or 6199)
+    busy = []
+    for label, port in (("面板", panel), ("反向 WS", onebot)):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.6)
+            if probe.connect_ex(("127.0.0.1", port)) == 0:
+                busy.append((label, port))
+    if not busy:
+        return
+    names = "、".join(f"{label} {port}" for label, port in busy)
+    owner = ""
+    try:
+        import psutil
+
+        wanted = {port for _, port in busy}
+        pids = {c.pid for c in psutil.net_connections(kind="tcp") if c.status == "LISTEN" and c.laddr and c.laddr.port in wanted}
+        owner = " / ".join(sorted({f"pid={p} {psutil.Process(p).name()}" for p in pids if p}))
+    except Exception:  # noqa: BLE001 - 报不出是谁也要报得出端口
+        pass
+    print(f"[端口被占] {names} 已有程序在监听" + (f"：{owner}" if owner else "") + "。")
+    print("           多半是另一份 AstrBot 实例。判据要看核心自己的日志与端口，所以这几步会红，")
+    print("           但那不等于包坏了——先退出那个实例，或挪开端口再跑：")
+    print("             set ASTRBOT_TEST_PANEL_PORT=6190 && set ASTRBOT_TEST_ONEBOT_PORT=6200")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="run the whole acceptance suite")
     parser.add_argument("--app", default=str(DEFAULT_APP), help="deliverable folder to test")
@@ -85,7 +114,7 @@ def main() -> int:
         print(f"[拒绝] {live} 里有使用者/客户端的东西（{', '.join(str(m.name) for m in marks if m.exists())}）。")
         print("       这套验收会删 data\\ 重跑。请指向干净副本，例如：")
         print("         venv\\Scripts\\python.exe -c \"import zipfile;pathlib\"  # 或直接：")
-        print("         powershell -Command \"Expand-Archive installer\\AstrBot-4.29.3-desktop-portable.zip dist-verify\"")
+        print("         powershell -Command \"Expand-Archive installer\\AstrBot-4.29.4-desktop-portable.zip dist-verify\"")
         print("         venv\\Scripts\\python.exe test\\run_all.py --app dist-verify\\AstrBot")
         print("       确认这个目录可以牺牲掉，再加 --allow-live-data。")
         return 2
@@ -95,6 +124,8 @@ def main() -> int:
     env["PYTHONIOENCODING"] = "utf-8"
     python = str(BUILD / "venv" / "Scripts" / "python.exe")
     temp = Path(tempfile.gettempdir())
+
+    port_preflight()
 
     report = ARTIFACTS / "run-all.txt"
     steps: list[dict] = []
@@ -135,7 +166,7 @@ def main() -> int:
     if napcat_zip.is_file():
         env["ASTRBOT_TEST_LOCAL_ZIP"] = str(napcat_zip)
     # 「免安装包就是完整副本」这一层要真验：把刚产出的包指给修复器
-    portable = BUILD / "installer" / "AstrBot-4.29.3-desktop-portable.zip"
+    portable = BUILD / "installer" / "AstrBot-4.29.4-desktop-portable.zip"
     if portable.is_file():
         env["ASTRBOT_TEST_RESTORE_ZIP"] = str(portable)
     step("QQ 接入客户端验收 --onebottest", [str(launcher), "--onebottest=runall-ob.png"],

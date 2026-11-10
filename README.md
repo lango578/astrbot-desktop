@@ -28,6 +28,9 @@
 1. **Windows 仍会提示「未知发布者」。** 两个 exe 和安装包都带本次构建的自签代码签名
    （附 `keys/astrbot-signing.cer`，改一个字节就会被报 `HashMismatch`），但自签证书没有权威机构背书，
    SmartScreen 该弹还是弹。这不是文件被篡改的信号；要彻底不弹需要购买正式代码签名证书。
+   另外**国产杀软会更狠**：构建机上实测，360 主动防御在 `AstrBot-Setup-4.29.4.exe` 被执行的瞬间拦下运行
+   （拒绝访问）并把文件从磁盘带走（当时那台机器 Windows Defender 的实时防护是关的，所以不是它做的）。
+   碰到「安装包凭空消失 / 装不上」先看杀软隔离区，再用 `SHA256SUMS.txt` 核对；不愿意加白名单就用免安装版。
 2. **校验再装。** 下载 `SHA256SUMS.txt`，用 `certutil -hashfile 文件名 SHA256` 比对；
    源码树另有 `SOURCE-SHA256.txt`。
 
@@ -74,10 +77,12 @@ tools\innosetup\ISCC.exe /DSourceDir="...\dist-new\AstrBot" build\setup_astrbot.
 | `--onebottest` 里的离线副本 | 断网也能装客户端：包里 `factory\napcat\` 带 NapCat v4.18.41 两个压缩包（上游许可允许随全文再分发），装的时候仍按同一串 SHA-256 逐字节核对，改一个字节就拒装 |
 | `--repairtest` | 「一键修复」的红绿对照：真注入坏配置、缺目录、缺文件、被占端口、孤儿核心、被改坏的 png，跑完断言每一项要么被修好并复验、要么如实报"需要你处理"；同时断言修复器没在 UI 线程上做 I/O |
 
-一条命令跑全套：`venv\Scripts\python.exe test\run_all.py`（14 步、286 项断言（外网那 1 项不可达时会显式记 NOTRUN），全部对着打包后的
-`dist-new\AstrBot` 跑，不是对着源码目录跑）。安装程序本身另算 19 项：`test\verify_installer.py`
+一条命令跑全套：`venv\Scripts\python.exe test\run_all.py --app dist-verify\AstrBot`（14 步、290 项断言（外网那 1 项不可达时会显式记 NOTRUN），全部对着**免安装包解出来的干净副本**跑：
+`Expand-Archive installer\AstrBot-4.29.4-desktop-portable.zip dist-verify`。不是对着源码目录，也不是对着
+任何可能有人在用的目录 —— 2026-10-30 就因此把使用者真在跑的客户端删过一半，现在套件见到
+`data\onebot|plugins|config` 直接拒绝执行）。安装程序本身另算 19 项：`test\verify_installer.py`
 （装一遍再卸一遍，含三语文案与「不删 data\」）。
-最后还有一步"测你真拿到的那份"：把 `AstrBot-Setup-4.29.3.exe` 静默装进临时目录，用
+最后还有一步"测你真拿到的那份"：把 `AstrBot-Setup-4.29.4.exe` 静默装进临时目录，用
 `ASTRBOT_APP_DIR` 指着**装完的目录**再跑一遍 `verify_desktop_app`（10 项，含 mock OneBot 推进 `/help`
 真收到回包），并核对安装后的两个 exe 与构建产物逐字节一致、签名与时间戳仍在。验完卸掉、临时目录删除。
 

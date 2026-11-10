@@ -33,8 +33,9 @@ VENV_PY = BUILD / "venv" / "Scripts" / "python.exe"
 SRC = BUILD / "src" / "AstrBot-master"
 APP = Path(os.environ.get("ASTRBOT_APP_DIR") or (BUILD / "dist" / "AstrBot"))
 
-DASHBOARD_PORT = 6185
-ONEBOT_PORT = 6199
+# 可覆盖是为了本机已有另一个 AstrBot 占住 6185/6199 时，验收还能跑完而不是整轮拖红。
+DASHBOARD_PORT = int(os.environ.get("ASTRBOT_TEST_PANEL_PORT") or 6185)
+ONEBOT_PORT = int(os.environ.get("ASTRBOT_TEST_ONEBOT_PORT") or 6199)
 
 
 def http(method: str, url: str, body: dict | None = None, token: str | None = None):

@@ -50,7 +50,7 @@ namespace AstrBotDesktop
     internal sealed class RepairRunner
     {
         // 免安装包的名字：它就是这份程序的完整副本，修复器第二层靠它
-        public const string PortableZipName = "AstrBot-4.29.3-desktop-portable.zip";
+        public const string PortableZipName = "AstrBot-4.29.4-desktop-portable.zip";
         private readonly string _baseDir;
         private readonly LauncherSettings _settings;
         private readonly RepairHooks _hooks;
@@ -88,6 +88,7 @@ namespace AstrBotDesktop
             _steps.Clear();
             CheckKeyFiles();
             CheckPackageIntegrity();
+            CheckOutboundLink();
             CheckDataDirs();
             CheckConfig();
             CheckOrphanCore();
@@ -155,7 +156,7 @@ namespace AstrBotDesktop
             step.Broken = true;
             step.NeedsUser = true;
             step.Found = "缺 " + missing.Count + " 项：" + string.Join("、", missing.ToArray());
-            step.Advice = "用 AstrBot-Setup-4.29.3.exe 重装一次即可（它不会动 data\\，聊天记录和配置都留着）；"
+            step.Advice = "用 AstrBot-Setup-4.29.4.exe 重装一次即可（它不会动 data\\，聊天记录和配置都留着）；"
                 + "如果是被杀毒软件隔离了，请把它加进白名单再装。";
             _hooks.Log("[修复] 程序文件缺失：" + step.Found);
         }
@@ -268,7 +269,7 @@ namespace AstrBotDesktop
                 int shown = Math.Min(6, list.Count);
                 step.Advice = "这些还得靠你：" + string.Join("；", list.GetRange(0, shown).ToArray())
                     + (list.Count > shown ? " 等 " + list.Count + " 项" : "")
-                    + "。把手里那份 AstrBot-4.29.3-desktop-portable.zip 放到启动器同目录，"
+                    + "。把手里那份 AstrBot-4.29.4-desktop-portable.zip 放到启动器同目录，"
                     + "或点「从免安装包还原」指给修复器，就能按摘要一个个补回来（不动 data\\）；"
                     + "实在没有就重装一次（安装程序也不动 data\\）。";
             }
@@ -510,6 +511,64 @@ namespace AstrBotDesktop
                     sb.Append(b.ToString("x2"));
                 }
                 return sb.ToString();
+            }
+        }
+
+        // 一·七、插件市场/更新检查的外网链路：上游有个毛病是共用的 httpx 会话被关掉之后
+        // 不会重建（日志里就是 "Session is closed"），表现是插件页一直加载不出来、但核心其它功能正常。
+        // 这个我们修得了：重启我们自己的核心就会重建会话。真断网则不是重启能解决的，要说清区别。
+        private void CheckOutboundLink()
+        {
+            RepairStep step = Begin("外网与插件市场");
+            string logPath = Path.Combine(_baseDir, "data", "logs", "astrbot.log");
+            if (!File.Exists(logPath))
+            {
+                step.Found = "还没有核心日志，跳过";
+                return;
+            }
+            string tail = "";
+            try
+            {
+                string all = File.ReadAllText(logPath, Encoding.UTF8);
+                tail = all.Length > 20000 ? all.Substring(all.Length - 20000) : all;
+            }
+            catch (Exception)
+            {
+                step.Found = "日志读不到，跳过";
+                return;
+            }
+            bool closedSession = tail.Contains("Session is closed");
+            bool marketFailed = tail.Contains("Failed to fetch remote plugin marketplace");
+            if (!closedSession && !marketFailed)
+            {
+                step.Found = "日志里没有外网失败的痕迹";
+                return;
+            }
+            step.Broken = true;
+            if (!closedSession)
+            {
+                step.NeedsUser = true;
+                step.Found = "插件市场拉不下来（这台机器此刻出不去外网）";
+                step.Advice = "不是安装包坏了：把网络/代理恢复后再打开插件页即可；"
+                    + "急着装插件的话，用「从本地目录装」或面板上传那条路。";
+                return;
+            }
+            _hooks.Log("[修复] 日志里有 \"Session is closed\"（上游会话没重建），重启核心补一次");
+            _hooks.StopCore();
+            _hooks.StartCore();
+            for (int i = 0; i < 60 && !_hooks.PanelAnswers(); i++)
+            {
+                System.Threading.Thread.Sleep(1000);
+            }
+            step.Did = "重启了核心（会话会重建）";
+            step.Fixed = _hooks.PanelAnswers();
+            step.Found = step.Fixed
+                ? "有 \"Session is closed\"，已重启核心"
+                : "重启了核心但面板还没应答，再看下面日志";
+            if (!step.Fixed)
+            {
+                step.NeedsUser = true;
+                step.Advice = "点「重启服务」再等十秒；仍不行就点「打包诊断」把包发出来。";
             }
         }
 

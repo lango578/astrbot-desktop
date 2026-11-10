@@ -637,6 +637,25 @@ def self_check() -> int:
         print(f"  FAIL pip 试装失败（退出码 {pip_code}）: {(last[-1] if last else '无输出')[:140]}")
         failures += 1
 
+    print("\n[代理例外写法]")
+    saved_proxy = {name: os.environ.get(name) for name in ("NO_PROXY", "no_proxy")}
+    try:
+        os.environ["NO_PROXY"] = f"{saved_proxy.get('NO_PROXY') or 'localhost,127.0.0.1'},[::1]"
+        sanitize_proxy_env()
+        import httpx
+
+        httpx.AsyncClient()
+        print("  OK   NO_PROXY 写成 \"[::1]\" 也建得出 httpx 客户端（扫码登录与模型调用都要它）")
+    except Exception as exc:  # noqa: BLE001 - 自检要说人话，不抛栈
+        print(f"  FAIL httpx 被 NO_PROXY 的写法挡住：{type(exc).__name__}: {str(exc)[:120]}")
+        failures += 1
+    finally:
+        for name, value in saved_proxy.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
     print("\n[随包文件]")
     checks = (
         ("WebUI 静态文件", Path(get_astrbot_path()) / "astrbot" / "dashboard" / "dist" / "index.html"),
@@ -1066,9 +1085,29 @@ def force_utf8_streams() -> None:
             pass
 
 
+def sanitize_proxy_env() -> list[str]:
+    """Drop square brackets from the proxy-bypass variables.
+
+    Proxy tools write IPv6 bypass entries as "[::1]", but httpx parses every
+    NO_PROXY entry as a URL and raises InvalidURL("Invalid port: ':1]'") while
+    constructing any client -- which takes down scan-login and every
+    httpx-backed model call, with an error no desktop user can act on.
+    """
+    changed = []
+    for name in ("NO_PROXY", "no_proxy"):
+        value = os.environ.get(name)
+        if not value or "[" not in value and "]" not in value:
+            continue
+        os.environ[name] = value.replace("[", "").replace("]", "")
+        changed.append(name)
+    return changed
+
+
 def main() -> int:
     force_utf8_streams()
     suppress_child_console_windows()
+    for _name in sanitize_proxy_env():
+        print(f"[桌面版] {_name} 里的方括号已去掉：httpx 解析不了 \"[::1]\" 这种写法。")
     args = parse_args(sys.argv[1:])
     if args.host:
         os.environ["ASTRBOT_DASHBOARD_HOST"] = args.host

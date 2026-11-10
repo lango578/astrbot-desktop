@@ -13,7 +13,7 @@ namespace AstrBotDesktop
 {
     internal static class Build
     {
-        public const string Stamp = "1030-91ad76c5";
+        public const string Stamp = "1109-db752c1b";
     }
 
     internal static class UiGuard

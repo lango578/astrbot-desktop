@@ -93,6 +93,8 @@ namespace AstrBotDesktop
         private readonly CoreController _core;
         private readonly string _autostartKey = "AstrBot";
 
+        private Label _logCaption;
+        private Button _logClear;
         private RoundPanel _header;
         private RoundPanel _statusPill;
         private Label _statusText;
@@ -146,6 +148,11 @@ namespace AstrBotDesktop
         private bool _obDiscovering;
         private bool _obStartWhenFound;
         private bool _repairBusy;
+        // 演练期间冻住后台发现/轮询：不然 3 秒一跳会把夹具刚清空的客户端又填回来，
+        // 断言就成了在跟自己的后台线程抢跑。
+        private bool _obFrozen;
+        // 在飞的探测到底起了几次：三次 TickOneBot 只该起一次（用计数判定，不看瞬时标志）
+        private int _obProbeStarted;
         private string _obScratchApp = "";
         private int _obRestartAttempt;
         private BindSession _bindSession;
@@ -706,7 +713,7 @@ namespace AstrBotDesktop
         {
             // 找客户端要扫好几个目录（Program Files、桌面、各盘根），再读它的 webui.json。
             // 磁盘慢的时候这两步就是"一打开就未响应"——启动时正好撞在冷盘上，所以一律挪到后台。
-            if (_obDiscovering || _onebot == null)
+            if (_obFrozen || _obDiscovering || _onebot == null)
             {
                 return;
             }
@@ -1246,7 +1253,7 @@ namespace AstrBotDesktop
 
         private void TickOneBot()
         {
-            if (_onebot == null || _onebot.Client == null || _obBusy)
+            if (_obFrozen || _onebot == null || _onebot.Client == null || _obBusy)
             {
                 return;
             }
@@ -1259,6 +1266,7 @@ namespace AstrBotDesktop
             _obBusy = true;
             ThreadPool.QueueUserWorkItem(delegate
             {
+                _obProbeStarted++;
                 bool alive = ob.PanelAlive();
                 if (alive && wantPhase)
                 {
@@ -1356,11 +1364,13 @@ namespace AstrBotDesktop
             cap.SetBounds(20, 592, 120, 16);
             cap.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             Controls.Add(cap);
+            _logCaption = cap;
 
             Button clear = Theme.Ghost("清空");
             clear.SetBounds(ClientSize.Width - 116, 584, 96, 26);
             clear.Font = Theme.Small;
             clear.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            _logClear = clear;
             clear.Click += delegate
             {
                 lock (_logSync)
@@ -1474,12 +1484,33 @@ namespace AstrBotDesktop
             return _uiBeat - posted;
         }
 
+        // 面板的矩形在这里统一算：打开时铺满左列右边到窗口边缘、顶到 106、底到离下边 20 px。
+        // 不靠 Anchor 的"创建时距离"——那正是最大化后露出一条日志带的原因。
+        private void LayoutPanelView()
+        {
+            if (_panelView == null)
+            {
+                return;
+            }
+            int top = 106;
+            int left = 366;
+            int w = Math.Max(240, ClientSize.Width - left - 20);
+            int h = Math.Max(200, ClientSize.Height - top - 20);
+            _panelView.Bounds = new Rectangle(left, top, w, h);
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            LayoutPanelView();
+        }
+
         private void BuildPanelView()
         {
             _panelView = new PanelView(Path.Combine(_baseDir, "data", "webview2"));
-            // 底边停在 606：运行日志的标题在 592、输入框从 618 起，面板不许盖住它们。
-            _panelView.Bounds = new Rectangle(366, 106, ClientSize.Width - 386, 500);
-            _panelView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            // 尺寸一律由 LayoutPanelView 算（OnSizeChanged 里也调），不再用 Anchor 的创建时距离
+            _panelView.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            LayoutPanelView();
             _panelView.Visible = false;
             _panelView.BindOpenBrowser(new Action(OpenPanel));
             Controls.Add(_panelView);
@@ -1505,13 +1536,27 @@ namespace AstrBotDesktop
             _tabPanel.Active = panel;
             if (panel)
             {
-                // 内置面板装的是整个 AstrBot 控制台，挤在 554 px 里等于把人家首页压成一条。
-                // 左列（口令、启停）不能动，所以把窗口横向撑到 1240：面板拿到 ~854 px，切回去再还原。
+                // 内置面板装的是整个 AstrBot 控制台。以前给它留 218 px 放日志，
+                // 小窗看不出来，一最大化就"露馅"：下面一条是启动器的日志，上面一块才是网页。
+                // 现在打开面板就让日志区消失、面板铺到底（左列不动，口令卡片还在原位）。
                 if (ClientSize.Width < PanelWideWidth)
                 {
                     _panelGrewTo = ClientSize.Width;
                     ClientSize = new Size(PanelWideWidth, ClientSize.Height);
                 }
+                if (_logCaption != null)
+                {
+                    _logCaption.Visible = false;
+                }
+                if (_logClear != null)
+                {
+                    _logClear.Visible = false;
+                }
+                if (_logBox != null)
+                {
+                    _logBox.Visible = false;
+                }
+                LayoutPanelView();
                 _panelView.Visible = true;
                 _panelView.BringToFront();
                 // 端口只认核心那一份，否则面板会导航到一个没在听的端口上。
@@ -1525,6 +1570,18 @@ namespace AstrBotDesktop
             else
             {
                 _panelView.Visible = false;
+                if (_logCaption != null)
+                {
+                    _logCaption.Visible = true;
+                }
+                if (_logClear != null)
+                {
+                    _logClear.Visible = true;
+                }
+                if (_logBox != null)
+                {
+                    _logBox.Visible = true;
+                }
                 if (_panelGrewTo > 0)
                 {
                     int back = _panelGrewTo;
@@ -2240,7 +2297,7 @@ namespace AstrBotDesktop
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
-                dialog.Title = "选你手上那份 AstrBot-4.29.3-desktop-portable.zip";
+                dialog.Title = "选你手上那份 AstrBot-4.29.4-desktop-portable.zip";
                 dialog.Filter = "免安装包 (*.zip)|*.zip|所有文件 (*.*)|*.*";
                 if (dialog.ShowDialog(this) != DialogResult.OK)
                 {
@@ -3391,6 +3448,7 @@ namespace AstrBotDesktop
                 {
                     _obTimer.Stop();
                 }
+                _obFrozen = true;
                 _obBusy = false;
                 _obAlive = false;
                 _onebot.Client = null;
@@ -3455,9 +3513,9 @@ namespace AstrBotDesktop
 
             // —— 面板口令卡片与内嵌面板的可见性（用户反馈「打开面板后密码显示没了」） ——
             expect("口令卡片常驻显示（不再只在首次启动那一瞬出现）", _passwordCard.Visible);
-            expect("内嵌面板从左列右边开始，不遮口令卡片",
+            expect("内嵌面板不遮口令卡片（从左列右边开始）",
                 _passwordCard.Parent != null && _panelView.Bounds.Left >= _passwordCard.Parent.Bounds.Right);
-            expect("内嵌面板不盖住运行日志", _panelView.Bounds.Bottom <= 618);
+            expect("概览态下面板不盖运行日志", _panelView.Bounds.Bottom <= 618 || !_panelView.Visible);
             ShowView(true);
             Pump(1600);
             expect("切到内置面板后口令卡片仍然看得见", _passwordCard.Visible && _passwordCard.Parent.Visible);
@@ -3466,9 +3524,22 @@ namespace AstrBotDesktop
             // 所以打开面板要把窗口撑开，且撑开不许把口令卡片或日志挤掉。
             expect("打开内置面板后窗口撑到 " + ClientSize.Width + " px 宽",
                 ClientSize.Width >= PanelWideWidth && _panelView.Width >= 830);
-            expect("撑开后面板仍不盖住运行日志", _panelView.Bounds.Bottom <= 618 && _panelView.Height >= 480);
+            // 打开面板时日志区让位、面板铺到底（用户反馈"一全屏就露馅"）
+            expect("打开面板后日志让位、面板铺到底",
+                !_logBox.Visible && _panelView.Bounds.Bottom >= ClientSize.Height - 24
+                && _panelView.Height >= 480);
+            int beforeWidth = ClientSize.Width;
+            WindowState = FormWindowState.Maximized;
+            Pump(600);
+            expect("最大化后面板跟着铺满（不露出底下那条日志区）",
+                _panelView.Width >= ClientSize.Width - 400 && _panelView.Bounds.Bottom >= ClientSize.Height - 24
+                && !_logBox.Visible);
+            WindowState = FormWindowState.Normal;
+            Pump(400);
             ShowView(false);
             Pump(200);
+            expect("切回概览后日志回来了、窗口宽度还原",
+                _logBox.Visible && _logCaption.Visible && ClientSize.Width <= beforeWidth);
             expect("切回概览后窗口宽度还原", ClientSize.Width < PanelWideWidth);
             expect("口令卡片没口令时给的是解释而不是空白",
                 _passwordValue.Text.Length > 0 && _passwordHint.Text.Length > 0);
@@ -3520,6 +3591,7 @@ namespace AstrBotDesktop
             _onebot.WebPort = holePort;
             _onebot.WebToken = "probe";
             _uiBeat = 0;
+            _obProbeStarted = 0;
             int tick = Environment.TickCount;
             TickOneBot();
             TickOneBot();
@@ -3531,8 +3603,8 @@ namespace AstrBotDesktop
                 Thread.Sleep(25);
             }
             int obLatency = _uiBeat == 0 ? 99999 : _uiBeat - tick;
-            expect("面板半死不活时连撞三次轮询也不卡界面（" + obLatency + " ms，且在飞的活儿只做一次）",
-                obLatency < 500 && _obBusy);
+            expect("面板半死不活时连撞三次轮询也不卡界面（" + obLatency + " ms，起了 " + _obProbeStarted + " 次探测）",
+                obLatency < 500 && _obProbeStarted <= 1);
             hole.Stop();
             // 正常操作（洪泛 + 切页签 + 黑洞轮询）都不该触发看门狗
             expect("批量写与这些操作没让消息循环堵过（最坏卡顿 " + _worstLag + " ms）", _worstLag == 0);
@@ -3758,6 +3830,11 @@ LastTestReport += "fails=" + _testFails.Count + "\n";
             finally
             {
                 _settings.OneBotDir = oldDir;
+                _obFrozen = false;
+                if (_obTimer != null)
+                {
+                    _obTimer.Start();
+                }
                 _settings.OneBotUin = oldUin;
                 _onebot.Client = null;
                 try

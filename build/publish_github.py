@@ -203,7 +203,7 @@ def tree_entries(tok: str, owner: str, repo_name: str, files: list[Path]) -> lis
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, help="owner/name，例如 someone/astrbot-desktop")
-    parser.add_argument("--tag", default="v4.29.3-desktop.1")
+    parser.add_argument("--tag", default="v4.29.4-desktop.1")
     parser.add_argument("--token-file", default="")
     parser.add_argument("--dry-run", action="store_true", help="只列出将要上传的东西，不联网写")
     parser.add_argument(
@@ -403,7 +403,7 @@ def main() -> int:
 
 def release_body(assets) -> str:
     lines = [
-        "AstrBot 4.29.3 的 Windows 桌面版构建（**非官方**，上游：https://github.com/AstrBotDevs/AstrBot）。",
+        "AstrBot 4.29.4 的 Windows 桌面版构建（**非官方**，上游：https://github.com/AstrBotDevs/AstrBot）。",
         "",
         "- 原生启动器（深色圆角窗口 + 托盘）+ 无控制台窗口核心 + 内嵌管理面板",
         "- QQ 接入：面板里点「扫码登录」，不用手抄 AppID/AppSecret",
@@ -411,12 +411,44 @@ def release_body(assets) -> str:
         "- 启动器自带纠错：端口占用自动顺延、面板启动超时看门狗、崩溃退避重启、故障分类给建议、一键导出脱敏诊断包",
         "- 修好了 OneBot / NapCat「重连上但再也收不到消息」的问题：直接改在程序里，不需要您再装任何插件",
         "",
+        "## 这一版跟着上游到了 4.29.4",
+        "",
+        "对您能感觉到的几条：",
+        "",
+        "- **面板/网页聊天不再会被日志堵住**（上游 #10902）：核心新增 `BoundedConsoleSink`，写控制台放到单独的线程上，",
+        "  队列满了就只丢这条日志并计数，不再把事件循环拖住。桌面版核心的日志正是从这条输出接给启动器的，",
+        "  所以这一条对我们特别相关。",
+        "- 管理面板的配置表单统一了样式（#10755），会话/用户选择改成统一的弹窗（#10747，"
+        "原来的下拉框和\"编辑列表项\"入口都换成\"选择会话来源\"/\"选择用户\"）。",
+        "- 上下文压缩设置简化为\"压缩策略\"+\"压缩模型\"，细项挪进\"更多设置\"，已有配置和运行行为不变（#10753）。",
+        "- 新增跨平台消息按钮组件（#9809）、独立于聊天模型的决策模型（#10775）、SerpApi 新闻搜索（#10773）、",
+        "  群共享定时任务管理（#10785）、PyPI 镜像选择器与测速（#10657）。",
+        "- Anthropic 兼容服务的 API Key 请求头不再被丢掉（#10787）；DashScope Agent 超时配置生效了（#10868）；",
+        "  默认 PyPI 镜像开启 TLS 证书校验（#10685）；支持带 `0x03` 前缀的腾讯 SILK 语音（#10744）。",
+        "",
+        "完整清单见上游 https://github.com/AstrBotDevs/AstrBot/releases/tag/v4.29.4",
+        "，包内也带了一份：面板\"更新日志\"或直接看 `core\\_internal\\changelogs\\v4.29.4.md`。",
+        "",
+        "桌面版本身这一轮（相对 v4.29.3-desktop.6）：",
+        "",
+        "- 打开内嵌面板时日志区让位、面板铺到底，最大化/改窗口尺寸后每次都重算矩形 —— 以前全屏会",
+        "  露出底下那条启动器日志带（\"前面是界面、后面是日志\"）。界面自检里加了一条真最大化一次的断言。",
+        "- 「一键修复」多了一项「外网与插件市场」：日志里出现上游会话被关掉（`Session is closed`）的痕迹",
+        "  就自动重启我们自己的核心并复验；单纯出不去网时不假装修好，直接说下一步怎么办。",
+        "- 代理软件把例外写成 `NO_PROXY=...,[::1]` 时，扫码登录与走 httpx 的模型调用原本会报",
+        "  `InvalidURL: Invalid port: ':1]'`；入口现在规整改写法，自检有一条盯着它。",
+        "- 扫码/改配置失败时的证书类报错会指出「代理在替换 HTTPS 证书」，不再甩一句英文。",
+        "",
         "## 下载前必读",
         "",
         "- 安装程序与包里的两个 exe 都由本次构建**自签**代码签名（随包附公钥 astrbot-signing.cer，可核对有没有被改过），",
-        "  但自签证书没有权威机构背书，Windows SmartScreen 仍会提示一次「未知发布者」。这不是文件被篡改。",
-        "- 二选一：运行 `AstrBot-Setup-4.29.3.exe`（安装版，简中/繁中/英文三套界面），",
-        "  或解压 `AstrBot-4.29.3-desktop-portable.zip` 后双击里面的 `AstrBot.exe`（免安装，数据都在同目录 data\\ 里）。",
+        "- 但自签证书没有权威机构背书，Windows SmartScreen 仍会提示一次「未知发布者」。这不是文件被篡改。",
+        "- **国产杀软（360 主动防御等）可能直接把安装包删掉**：构建机上实测，执行 `AstrBot-Setup-4.29.4.exe` 时",
+        "  360 的主动防御会拦下运行（拒绝访问）并把文件从磁盘带走（那台机器上 Windows Defender 的实时防护是关的，",
+        "  所以不是系统自带杀软做的）。遇到「安装包不见了/装不上」请先看杀软的隔离区并用下面的 SHA-256 核对；",
+        "  不想加白名单就用免安装版（解压 `AstrBot-4.29.4-desktop-portable.zip`，双击里面的 `AstrBot.exe`，不走安装动作）。",
+        "- 二选一：运行 `AstrBot-Setup-4.29.4.exe`（安装版，简中/繁中/英文三套界面），",
+        "  或解压 `AstrBot-4.29.4-desktop-portable.zip` 后双击里面的 `AstrBot.exe`（免安装，数据都在同目录 data\\ 里）。",
         "- 首次启动窗口里会显示面板初始密码，登录后请先改掉。",
         "- 校验：下载 SHA256SUMS.txt 后 `certutil -hashfile 文件名 SHA256` 比对。",
         "",

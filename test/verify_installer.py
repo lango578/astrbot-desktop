@@ -7,13 +7,18 @@ would actually get:
     silently drops message-table entries it doesn't recognise, so a typo here would
     otherwise ship as "?HOWTOSHORTCUT";
   * data\\ is never installed and never removed by an uninstall;
-  * the Add/Remove Programs entry exists and points at the right uninstaller.
+  * the Add/Remove Programs entry exists and points at the right uninstaller;
+  * what got installed is actually the build it claims to be: the core reports the Setup's
+    version, the packaged README says the same, and both executables match the build tree
+    byte for byte.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +29,12 @@ from pathlib import Path
 BUILD = Path(__file__).resolve().parents[1]
 APP_NAME = "AstrBot 桌面版"
 GROUP = "AstrBot"
+# 打包机上传给 ISCC 的那棵树：装完的内容必须和它逐字节一致，否则安装包是"名字对、内容错"。
+BUILD_APP = Path(os.environ.get("ASTRBOT_APP_DIR") or (BUILD / "dist-4.29.4" / "AstrBot"))
+
+
+def sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.is_file() else "missing"
 
 
 def run(cmd: list[str], timeout: int = 600) -> subprocess.CompletedProcess:
@@ -60,9 +71,10 @@ def install(setup: Path, target: Path, language: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--setup", default=str(BUILD / "installer" / "AstrBot-Setup-4.29.3.exe"))
+    parser.add_argument("--setup", default=str(BUILD / "installer" / "AstrBot-Setup-4.29.4.exe"))
     args = parser.parse_args()
     setup = Path(args.setup)
+    version = re.search(r"(\d+\.\d+\.\d+)", setup.name)
     results: list[tuple[str, bool, str]] = []
     if not setup.is_file():
         print(f"FAIL  setup missing  [{setup}]")
@@ -77,6 +89,33 @@ def main() -> int:
         results.append((f"[{language}] silent install exits cleanly", rc == 0, f"rc={rc}"))
         results.append((f"[{language}] program files landed", (target / "AstrBot.exe").is_file(), str(target)))
         results.append((f"[{language}] data\\ was not installed", not (target / "data").exists(), str(target / "data")))
+
+        if language == "chinesesimplified":
+            # 2026-11-09：/DSourceDir 被写成 /DDSourceDir，Inno 不报错，改用默认的旧树打出了一个
+            # 名字是 4.29.4、内容还是 4.29.3 的安装包。装完对一次版本和字节，这种事只能红不能静默。
+            want = version.group(1) if version else ""
+            core_init = target / "core" / "_internal" / "astrbot" / "__init__.py"
+            got = ""
+            if core_init.is_file():
+                found = re.search(r'__version__ = "([^"]+)"', core_init.read_text(encoding="utf-8", errors="replace"))
+                got = found.group(1) if found else ""
+            results.append(("installed core reports the packaged version", got == want, f"core={got} setup={want}"))
+
+            readme_path = target / "README.txt"
+            lines = readme_path.read_text(encoding="utf-8-sig", errors="replace").splitlines() if readme_path.is_file() else []
+            head = lines[3][:80] if len(lines) > 3 else "no README"
+            results.append(
+                (
+                    "installed README states that version",
+                    f"版本：AstrBot v{want}（WebUI v{want}）" in "\n".join(lines[:8]),
+                    head,
+                )
+            )
+
+            pairs = ("AstrBot.exe", "core/AstrBotCore.exe")
+            details = "; ".join(f"{name}: 装后 {sha(target / name)} / 构建 {sha(BUILD_APP / name)}" for name in pairs)
+            same = BUILD_APP.is_dir() and all(sha(target / name) == sha(BUILD_APP / name) != "missing" for name in pairs)
+            results.append(("installed exes are byte-identical to the build tree", same, details))
 
         links = sorted(p.stem for p in start_menu().glob("*.lnk")) if start_menu().is_dir() else []
         results.append((f"[{language}] 简体中文/繁體 shortcut names are real text",

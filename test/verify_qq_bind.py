@@ -25,13 +25,24 @@ BUILD = Path(__file__).resolve().parents[1]
 APP = Path(os.environ.get("ASTRBOT_APP_DIR") or (BUILD / "dist-new" / "AstrBot"))
 CORE = APP / "core" / "AstrBotCore.exe"
 ROOT = BUILD / "test" / "artifacts" / "qq-bind-root"
+# 实例登记表是「每用户、机器级」的，不隔离就会看见本机另一份真在跑的 AstrBot。
+SANDBOX = ROOT / "localappdata"
 PORT = 6194
 QR_HOST = "q.qq.com"
 
 
 def run_core(args: list[str], timeout: int = 200) -> subprocess.CompletedProcess:
     env = dict(os.environ)
-    env.update({"ASTRBOT_ROOT": str(ROOT), "PYTHONIOENCODING": "utf-8"})
+    # 端口与实例登记表都指到本测试的沙箱，否则闸门拦的是本机另一份实例，不是这里刚起的核心。
+    env.update(
+        {
+            "ASTRBOT_ROOT": str(ROOT),
+            "LOCALAPPDATA": str(SANDBOX),
+            "ASTRBOT_DASHBOARD_HOST": "127.0.0.1",
+            "ASTRBOT_DASHBOARD_PORT": str(PORT),
+            "PYTHONIOENCODING": "utf-8",
+        }
+    )
     return subprocess.run(
         [str(CORE)] + args,
         cwd=str(APP),
@@ -63,6 +74,7 @@ def main() -> int:
 
     shutil.rmtree(ROOT, ignore_errors=True)
     (ROOT / "data").mkdir(parents=True)
+    SANDBOX.mkdir(parents=True, exist_ok=True)
 
     # 1. 自检必须认这两个扫码模块和二维码库——冻结包里少一个就是运行时才炸。
     text = run_core(["--self-check"], timeout=400).stdout or ""
@@ -128,6 +140,7 @@ def main() -> int:
     env.update(
         {
             "ASTRBOT_ROOT": str(ROOT),
+            "LOCALAPPDATA": str(SANDBOX),
             "ASTRBOT_DASHBOARD_HOST": "127.0.0.1",
             "ASTRBOT_DASHBOARD_PORT": str(PORT),
             "PYTHONIOENCODING": "utf-8",

@@ -1,7 +1,7 @@
 AstrBot 桌面版（Windows）
 ========================
 
-版本：AstrBot v4.29.3（WebUI v4.29.3）· 内置 Python 3.12.10 · 无需安装，整个文件夹拷走就能用
+版本：AstrBot v4.29.4（WebUI v4.29.4）· 内置 Python 3.12.10 · 无需安装，整个文件夹拷走就能用
 
 这一版没有黑色命令行窗口。双击 AstrBot.exe 出现的是程序自己的窗口，机器人在后台跑；
 点窗口右上角的叉只是缩到右下角托盘（机器人继续收发），要真停请在托盘图标上右键「退出 AstrBot」。
@@ -220,20 +220,47 @@ AstrBot 在冻结的 EXE 里是进程内调用 pip，而 pip 会按路径读它�
 
     venv\Scripts\python.exe test\run_all.py
 
-14 步、286 项断言，全部对着**打包后的产物**跑（不是源码目录），所以绿的是您手里这份程序。
+    本机已经有一个 AstrBot 在跑（6185 面板、6199 反向 WS 被占）时，别让使用者为了您把机器人关掉：
+    把这套验收的端口挪开再跑，默认值不变，别人复现时不受影响 ——
+        set ASTRBOT_TEST_PANEL_PORT=6190
+        set ASTRBOT_TEST_ONEBOT_PORT=6200
+        venv\Scripts\python.exe test\run_all.py --app dist-verify\AstrBot
+    2026-11-09 那轮就是这么被拖红的：verify_app / verify_desktop_app / probe_panel_api /
+    verify_qq_bind / verify_onebot_recovery 五步全在报「已经有一个 AstrBot 在运行（面板端口 6185）」，
+    看着像 4.29.4 把核心弄坏了；把端口挪到空闲值后，同一个包 verify_app 12/12、面板接口 20/20 全绿。
+    红项的判据都是"日志里有没有那行"和"端口是不是我们的"，所以端口被别人占走时它们必然红 ——
+    这不是产品坏了，也不是可以忽略的红，而是跑错了环境。现在闸门会自己说清楚（见下）。
+
+  挪端口还不够：改配置的一次性通道（--platform-file / --login-bind）看的不是端口，而是
+  「每用户机器级」的实例登记表 %LOCALAPPDATA%\AstrBot\running.json。本机有另一份真在跑的
+  AstrBot 时，闸门会替它拦下写入 —— 对真人是对的，对验收是拦错了对象。所以这几步现在把
+  LOCALAPPDATA 指到自己的沙箱目录：闸门验的确实是这一步刚起的那个核心（verify_qq_bind 那条
+  「核心在跑时不许并发改配置」因此第一次变成了真断言，它报的是自己的 6194，不是别人的 6185）。
+  run_all 开跑前也会先看端口被谁占着并打印出来（占住它的进程名一并给出），不再让环境
+  问题伪装成回归。
+
+  另一条同类坑：NO_PROXY 里写 "[::1]"（不少代理软件就这么写）会让 httpx 0.28 在**建客户端**
+  时抛 InvalidURL: Invalid port: ':1]'，于是扫码登录、走 httpx 的模型调用全报这句看不懂的话。
+  入口现在会把这些变量里的方括号去掉（"::1" 与 "[::1]" 在 NO_PROXY 里同义），自检加了一条
+  盯着它；把 sanitize_proxy_env 改成空函数，那条立刻变红，不是摆设。
+
+14 步、290 项断言，全部对着**打包后的产物**跑（不是源码目录），所以绿的是您手里这份程序。
   （其中「插件下载国内源」那一步里有 1 项要靠外网基线做逐字节比对，加速源或直连不通时它会少 1 项并
-    显式打成 NOTRUN，不会悄悄算通过；其余 285 项与本网络无关。）
+    显式打成 NOTRUN，不会悄悄算通过；其余 289 项与本网络无关。）
 每一步都是往 stdout 打 PASS/FAIL 行、由 run_all 汇总；任何一步红了都会把那几行原文贴出来。
 
   步骤                                     断言  验的是什么
-  核心自检 --self-check                      28   依赖收全、端口空闲、CA 证书真能发起一次 pip 试装、
-                                                      国内源与扫码登录通道都在位
-  界面自检 --uitest                          79   不靠鼠标自动化：exe 内的钩子逐项断言控件状态 + PrintWindow
+  核心自检 --self-check                      29   依赖收全、端口空闲、CA 证书真能发起一次 pip 试装、
+                                                      国内源与扫码登录通道都在位，
+                                                      另加一条：NO_PROXY 写成 "[::1]" 时 httpx 仍建得出客户端
+  界面自检 --uitest                          81   不靠鼠标自动化：exe 内的钩子逐项断言控件状态 + PrintWindow
                                                       截图。四种 QQ 表单渲染且可见、平台块往返、状态灯颜色、
                                                       密码卡片、页签与设置记忆、内嵌面板真加载完成、
                                                       启动/手动停止的状态机、纠错与扫码登录的界面出口；
                                                       再加卡顿回归（灌 1200 行、黑洞端口轮询、故意堵 950 ms）
-                                                      与「标题栏带构建戳 / 这一路没人偷在 UI 线程上做 I/O」
+                                                      与「标题栏带构建戳 / 这一路没人偷在 UI 线程上做 I/O」；
+                                                      面板尺寸也钉住了：打开面板时日志让位、面板铺到底，
+                                                      最大化后再量一次（不许露出底下那条日志带）
   核心验收 verify_app                        12   含 PE 子系统检查：启动器与核心都是 GUI 子系统，
                                                       结构上不可能再弹命令行窗口
   双击级验收 verify_desktop_app              10   从空 data 目录起步：启动器拉起核心 → 面板 200 →
@@ -305,7 +332,7 @@ AstrBot 在冻结的 EXE 里是进程内调用 pip，而 pip 会按路径读它�
     加上 NapCat v4.18.41 两个压缩包（34.2 + 35.0 MB；上游许可明文允许再分发，条件是随包带许可全文与
     来源且不得商用，全文落在 factory\LICENSE-NapCat.txt），再加上 4138 个文件的逐文件 SHA-256 清单。
     「下载 NapCat」优先用这个副本，断网、代理没开、GitHub 拿不全字节都照样能装，且仍然按摘要核对。
-  第二层·免安装包 —— 那份 AstrBot-4.29.3-desktop-portable.zip 本身就是这套程序的完整副本。
+  第二层·免安装包 —— 那份 AstrBot-4.29.4-desktop-portable.zip 本身就是这套程序的完整副本。
     修复器会在启动器同目录、上级目录和"下载/桌面"里找它，找不到也可以点「从免安装包还原…」直接指给它；
     清单里对不上而第一层没覆盖到的文件，就从这里按摘要抽出来补回去（只读那个 zip，不改它）。
   代价是安装包 140 MB → ~230 MB。摘要只有一个真源：make_factory.py 从 AstrBotOneBotInstall.cs 里读，
@@ -317,7 +344,7 @@ AstrBot 在冻结的 EXE 里是进程内调用 pip，而 pip 会按路径读它�
   现在两处闸门：run_all 见到 data\onebot|plugins|config 就默认拒绝（明知要用 --allow-live-data），
   verify_desktop_app 删不动就直接退出码 2 说明原因，不再半删。整套验收一律对着
   **免安装包解出来的干净副本**跑：
-      powershell -Command "Expand-Archive installer\AstrBot-4.29.3-desktop-portable.zip dist-verify"
+      powershell -Command "Expand-Archive installer\AstrBot-4.29.4-desktop-portable.zip dist-verify"
       venv\Scripts\python.exe test\run_all.py --app dist-verify\AstrBot
   这样既不会碰任何人的数据，测的也正是别人手里那份。
 · 外网那几条要分清"产品坏了"和"这台机器出不去"：连不上（HTTP 码 0）或代理在做 TLS 中间人
@@ -332,7 +359,7 @@ AstrBot 在冻结的 EXE 里是进程内调用 pip，而 pip 会按路径读它�
 · 安装包另算 19 项（test\verify_installer.py，装完再卸载一次）：简中/繁中/英文三套文案、
   装到当前用户目录不需要管理员、安装前不会碰已有 data\、卸载默认保留 data\、
   控制面板「添加或删除程序」里的条目名称与卸载命令干净。
-· 最后一步是「测你真拿到的那份」：把 AstrBot-Setup-4.29.3.exe 静默装进一个临时目录，
+· 最后一步是「测你真拿到的那份」：把 AstrBot-Setup-4.29.4.exe 静默装进一个临时目录，
   把上面那条「双击级验收」再对着**装完的目录**跑一遍（10 项全绿，含 mock OneBot 推进 /help 真收到回包），
   并核对装完的两个 exe 与构建产物逐字节一致、签名和时间戳都还在，然后卸掉、删掉临时目录。
 
@@ -401,9 +428,9 @@ data\diagnostics\astrbot-diag-日期时间.txt。密码 / 密钥 / token 一律�
     4) powershell -NoProfile -ExecutionPolicy Bypass -File build\sign_dist.ps1        # 签 AstrBot.exe + core\AstrBotCore.exe
     4.5) venv\Scripts\python.exe build\make_factory.py         # 落 factory\ 离线自救副本（必须在签名之后：带的是签名后的字节）
     5) tools\innosetup\ISCC.exe /DSourceDir="<绝对路径>\dist-new\AstrBot" build\setup_astrbot.iss
-    6) powershell -NoProfile -ExecutionPolicy Bypass -File build\sign_dist.ps1 -SkipApp -ExtraFile installer\AstrBot-Setup-4.29.3.exe
+    6) powershell -NoProfile -ExecutionPolicy Bypass -File build\sign_dist.ps1 -SkipApp -ExtraFile installer\AstrBot-Setup-4.29.4.exe
     7) venv\Scripts\python.exe build\make_release_assets.py     # 免安装包 + SHA256SUMS（必须在签完安装包之后）
-    8) venv\Scripts\python.exe build\audit_package.py --zip installer\AstrBot-4.29.3-desktop-portable.zip
+    8) venv\Scripts\python.exe build\audit_package.py --zip installer\AstrBot-4.29.4-desktop-portable.zip
        目录扫描改成显式 opt-in 了（--path）：正在用的交付目录里本来就有 data\（使用者自己的口令哈希、
        聊天库、他自己装的 NapCat），把它跟"交付物混进了使用者数据"算进同一个退出码，等于每次出包
        都得先把 data 挪走。打包前的目录体检要跑就显式给：... audit_package.py --path dist-new\AstrBot
