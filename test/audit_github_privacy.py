@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -74,18 +75,25 @@ def load_probes() -> dict[str, re.Pattern]:
     return out
 
 
-def get(url: str, token: str, binary: bool = False):
+def get(url: str, token: str, binary: bool = False, tries: int = 2):
     headers = {"User-Agent": "astrbot-privacy-audit", "Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = "Bearer " + token
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as resp:
-            raw = resp.read()
-            return resp.status, (raw if binary else (json.loads(raw) if raw else {}))
-    except urllib.error.HTTPError as exc:
-        return exc.code, b"" if binary else {}
-    except Exception as exc:  # noqa: BLE001
-        return 0, b"" if binary else {}
+    last: Exception | None = None
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as resp:
+                raw = resp.read()
+                return resp.status, (raw if binary else (json.loads(raw) if raw else {}))
+        except urllib.error.HTTPError as exc:
+            return exc.code, b"" if binary else {}
+        except Exception as exc:  # noqa: BLE001 - 超时先重试一次，别一抖就把整层扫描变成空
+            last = exc
+            if attempt + 1 < tries:
+                time.sleep(3)
+    # 只回一个 0 会把"哪条路不通"藏起来（2026-11-10 排查 status=0 时白绕一圈），留下现场
+    print(f"[网络] {url} 取不到：{type(last).__name__}: {str(last)[:120]}", file=sys.stderr)
+    return 0, b"" if binary else {}
 
 
 def scan_text(label: str, blob: bytes, hits: list, probes: dict) -> None:
@@ -149,6 +157,9 @@ def main() -> int:
 
     status, refs = get(f"{API}/repos/{args.repo}/git/refs", token)
     ref_list = refs if isinstance(refs, list) else []
+    # 引用清单拿不到时循环一次都不跑，"扫到 0 个提交"会被打印成"干净"——那等于没查还说查过
+    if status != 200 or not ref_list:
+        missed.append(f"引用清单（git/refs status={status}，拿到 {len(ref_list)} 条）→ 提交说明/作者字段/文件内容这一整层没扫到")
     for ref in ref_list:
         name = str(ref.get("ref") or "")
         sha = str((ref.get("object") or {}).get("sha") or "")

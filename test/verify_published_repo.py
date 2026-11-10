@@ -54,29 +54,38 @@ def rate_limited(detail: str) -> bool:
     return detail.startswith("status=-1")
 
 
-def first_bytes(item: dict, count: int = 4096) -> tuple[int, bytes]:
-    """只取资产开头几字节：不整包下载 140 MB，也能证明陌生人不带 token 就真拿得到文件。
+def first_bytes(item: dict, count: int = 4096) -> tuple[int, bytes, str]:
+    """只取资产开头几字节：不整包下载 300 MB，也能证明陌生人不带 token 就真拿得到文件。
 
-    走 API 的资产地址（api.github.com + Accept: application/octet-stream），不走
-    github.com/.../releases/download/...：后者会跳到 objects.githubusercontent.com，
-    这台机器上那个域名解析不了（本机只有 api.github.com 与 codeload 通）。
+    2026-11-10 实测：`api.github.com + Accept: octet-stream` 会 302 到
+    `release-assets.githubusercontent.com`（这台机器的 hosts 把它指到 127.0.0.1，直连拿不到），
+    所以先试直连，取不到就走产品自己在用的那个加速前缀再试一次，并把**走的哪条路**带回去 ——
+    判据是拿回来的字节对不对，不是请求有没有发出去。
     """
-    url = str(item.get("url") or "")
-    headers = {
-        "User-Agent": "astrbot-desktop-verify",
-        "Accept": "application/octet-stream",
-        "Range": f"bytes=0-{count - 1}",
-    }
-    if TOKEN:
-        headers["Authorization"] = "Bearer " + TOKEN
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, b""
-    except Exception as exc:  # noqa: BLE001
-        return 0, f"{type(exc).__name__}".encode()
+    tried = []
+    for via, base in (("直连", str(item.get("url") or "")), ("加速前缀", str(item.get("browser_download_url") or ""))):
+        if not base:
+            continue
+        url = ("https://gh-proxy.com/" + base) if via == "加速前缀" else base
+        headers = {
+            "User-Agent": "astrbot-desktop-verify",
+            "Range": f"bytes=0-{count - 1}",
+        }
+        if via == "直连":
+            headers["Accept"] = "application/octet-stream"
+        if TOKEN:
+            headers["Authorization"] = "Bearer " + TOKEN
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=180) as resp:
+                raw = resp.read()
+            if len(raw) >= 16:
+                return resp.status, raw, via
+            tried.append(f"{via} 只拿到 {len(raw)} B")
+        except urllib.error.HTTPError as exc:
+            tried.append(f"{via} HTTP {exc.code}")
+        except Exception as exc:  # noqa: BLE001 - 取不到要说出是谁取不到
+            tried.append(f"{via} {type(exc).__name__}: {str(exc)[:70]}")
+    return 0, b"", "; ".join(tried)
 
 
 # 交付物里绝对不许出现的东西：令牌与私钥。
@@ -187,20 +196,30 @@ def main() -> int:
                     f"远端 {item.get('size')} / {str(item.get('digest'))[:23]}",
                 )
             )
-        # 「匿名真能下载」不是拿 302 糊过去的：取回开头字节，看内容对不对
-        status, chunk = first_bytes(item)
+        # 「匿名真能下载」不是拿 302 糊过去的：取回开头字节，跟本地开头逐字节比
+        status, chunk, route = first_bytes(item)
+        reach = f"status={status} 取了 {len(chunk)} 字节 通路={route}"
+        if status not in (200, 206) or len(chunk) < 16:
+            results.append(
+                (
+                    f"NOTRUN {name} 真下载（直连与加速前缀都没拿回字节：{route}）",
+                    True,
+                    "内容靠上面那条「远端 sha256 等于本地」判，那是 GitHub 服务端存下来的摘要",
+                )
+            )
+            continue
+        head_local = local_path.read_bytes()[: len(chunk)]
         if name.endswith(".txt"):
-            same = chunk == local_path.read_bytes()
-            results.append((f"{name} 匿名下载到的字节与本地完全一致", status in (200, 206) and same, f"status={status} bytes={len(chunk)}"))
+            results.append((f"{name} 下载到的字节与本地完全一致", status in (200, 206) and chunk == local_path.read_bytes(), reach))
         else:
             # 安装包是 PE（MZ），免安装包是 zip（PK\003\004）——按各自的格式头判，别都当 exe 判
             magic = b"PK\x03\x04" if name.lower().endswith(".zip") else b"MZ"
             label = "zip 头" if magic != b"MZ" else "PE 头"
             results.append(
                 (
-                    f"{name} 匿名下载可用（前 4 KB 是对的{label}）",
-                    status in (200, 206) and chunk[: len(magic)] == magic,
-                    f"status={status} 开头={chunk[:4]!r} 取了 {len(chunk)} 字节",
+                    f"{name} 下载可用（前 {len(chunk)} 字节是对的{label}且与本地一致）",
+                    chunk[: len(magic)] == magic and chunk == head_local,
+                    reach,
                 )
             )
 

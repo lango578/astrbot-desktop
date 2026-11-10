@@ -224,14 +224,25 @@ def main() -> int:
     files = sorted(p for p in STAGE.rglob("*") if p.is_file())
     # 资产就是 installer/ 里的安装程序、免安装包和校验和。名字带版本号，所以按后缀扫
     # 而不是写死——写死过一次，结果漏传了安装包。安卓用的插件不挂到 Windows 发布页上。
+    # 但"按后缀扫"会把上一版留在 installer/ 里的产物一起扫进来（2026-11-09 dry-run 抓到：
+    # 4.29.4 的发布页差点挂上 4.29.3 的 Setup 与免安装包），所以名字里必须带 tag 的版本号，
+    # 而且被跳过的要打印出来——悄悄少传和一个版本混着传，都属于把人坑在事后。
+    tag_version = re.search(r"v?(\d+\.\d+\.\d+)", args.tag)
+    want = tag_version.group(1) if tag_version else ""
     assets = []
+    skipped: list[str] = []
     for path in sorted(RELEASE_DIR.glob("*")):
         if not path.is_file() or path.suffix.lower() not in (".exe", ".zip", ".txt"):
             continue
         low = path.name.lower()
         if low.startswith("onebot-recovery-fix") or low.startswith("iscc"):
             continue
+        if want and want not in path.name and path.name != "SHA256SUMS.txt":
+            skipped.append(path.name)
+            continue
         assets.append(path)
+    if skipped:
+        print("跳过（不是本次 tag 的版本，仍留在 installer/ 里）: " + ", ".join(skipped))
 
     missing: list[str] = []
     if not any("setup" in p.name.lower() for p in assets):
